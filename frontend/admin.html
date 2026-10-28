@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8" />
+<title>Biddabari AI Tutor — Admin</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #f4f6f5; margin: 0; color: #1f2a24; }
+  header { background: #1a7f5a; color: white; padding: 16px 24px; }
+  header h1 { margin: 0; font-size: 18px; }
+  main { max-width: 900px; margin: 24px auto; padding: 0 16px; display: flex; flex-direction: column; gap: 24px; }
+  .card { background: white; border: 1px solid #e1e7e3; border-radius: 10px; padding: 18px 20px; }
+  .card h2 { margin: 0 0 12px; font-size: 15px; color: #14603f; }
+  .stat-row { display: flex; gap: 24px; flex-wrap: wrap; }
+  .stat { min-width: 120px; }
+  .stat .value { font-size: 24px; font-weight: 700; }
+  .stat .label { font-size: 12.5px; color: #6b7a72; }
+  button.sync-btn {
+    background: #1a7f5a; color: white; border: none; border-radius: 8px;
+    padding: 9px 16px; font-size: 13.5px; cursor: pointer;
+  }
+  button.sync-btn:disabled { background: #b7cdc3; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eef1ef; vertical-align: top; }
+  th { color: #6b7a72; font-weight: 600; font-size: 12px; text-transform: uppercase; }
+  .tag-refusal { background: #fff6e8; color: #8a5a00; font-size: 11px; padding: 2px 7px; border-radius: 999px; }
+  .tag-down { background: #fdeceb; color: #b23c2e; font-size: 11px; padding: 2px 7px; border-radius: 999px; }
+  .empty { color: #6b7a72; font-size: 13px; padding: 8px 0; }
+  #sync-log { white-space: pre-wrap; font-size: 11.5px; background: #0f1a15; color: #c9e7da; padding: 10px; border-radius: 8px; max-height: 160px; overflow: auto; margin-top: 10px; display: none; }
+</style>
+</head>
+<body>
+<header><h1>Biddabari AI Tutor — Admin</h1></header>
+<main>
+  <div class="card">
+    <h2>Index Status</h2>
+    <div class="stat-row" id="stats-row">
+      <div class="stat"><div class="value" id="stat-pages">—</div><div class="label">Pages indexed</div></div>
+      <div class="stat"><div class="value" id="stat-chunks">—</div><div class="label">Chunks</div></div>
+      <div class="stat"><div class="value" id="stat-synced">—</div><div class="label">Last synced</div></div>
+    </div>
+    <div style="margin-top:14px;">
+      <button class="sync-btn" id="sync-btn">এখনই Sync করো</button>
+    </div>
+    <pre id="sync-log"></pre>
+  </div>
+
+  <div class="card">
+    <h2>সাম্প্রতিক প্রশ্ন</h2>
+    <table id="questions-table">
+      <thead><tr><th>সময়</th><th>প্রশ্ন</th><th>উত্তর (shortened)</th><th>স্ট্যাটাস</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="empty" id="questions-empty" style="display:none;">কোনো প্রশ্ন লগ হয়নি এখনো।</div>
+  </div>
+
+  <div class="card">
+    <h2>👎 Thumbs-down — fix করার priority list</h2>
+    <table id="thumbsdown-table">
+      <thead><tr><th>সময়</th><th>প্রশ্ন</th><th>উত্তর</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="empty" id="thumbsdown-empty" style="display:none;">কোনো thumbs-down নেই — ভালো অবস্থা!</div>
+  </div>
+</main>
+
+<script>
+const API_BASE_URL = window.BIDDABARI_API_BASE_URL || "http://127.0.0.1:8000";
+
+function fmtTime(ts) {
+  if (!ts) return "—";
+  return new Date(ts * 1000).toLocaleString("bn-BD");
+}
+
+async function loadStats() {
+  const res = await fetch(`${API_BASE_URL}/admin/stats`);
+  const data = await res.json();
+  document.getElementById("stat-pages").textContent = data.index.total_pages;
+  document.getElementById("stat-chunks").textContent = data.index.total_chunks;
+  document.getElementById("stat-synced").textContent = data.last_sync ? fmtTime(data.last_sync.ran_at) : "কখনো না";
+}
+
+async function loadQuestions() {
+  const res = await fetch(`${API_BASE_URL}/admin/questions?limit=50`);
+  const rows = await res.json();
+  const tbody = document.querySelector("#questions-table tbody");
+  tbody.innerHTML = "";
+  document.getElementById("questions-empty").style.display = rows.length ? "none" : "block";
+  for (const r of rows) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${fmtTime(r.created_at)}</td>
+      <td>${escapeHtml(r.question)}</td>
+      <td>${escapeHtml((r.answer || "").slice(0, 80))}${r.answer && r.answer.length > 80 ? "…" : ""}</td>
+      <td>${r.was_refusal ? '<span class="tag-refusal">refused</span>' : ""} ${r.feedback === "down" ? '<span class="tag-down">👎</span>' : ""}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+async function loadThumbsDown() {
+  const res = await fetch(`${API_BASE_URL}/admin/thumbs-down?limit=50`);
+  const rows = await res.json();
+  const tbody = document.querySelector("#thumbsdown-table tbody");
+  tbody.innerHTML = "";
+  document.getElementById("thumbsdown-empty").style.display = rows.length ? "none" : "block";
+  for (const r of rows) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${fmtTime(r.created_at)}</td>
+      <td>${escapeHtml(r.question)}</td>
+      <td>${escapeHtml(r.answer)}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str || "";
+  return div.innerHTML;
+}
+
+document.getElementById("sync-btn").addEventListener("click", async () => {
+  const btn = document.getElementById("sync-btn");
+  const log = document.getElementById("sync-log");
+  btn.disabled = true;
+  btn.textContent = "Sync হচ্ছে...";
+  log.style.display = "block";
+  log.textContent = "Indexing pipeline চলছে, একটু অপেক্ষা করো...";
+  try {
+    const res = await fetch(`${API_BASE_URL}/admin/sync`, { method: "POST" });
+    const data = await res.json();
+    log.textContent = JSON.stringify(data, null, 2);
+    await loadStats();
+  } catch (e) {
+    log.textContent = "Sync failed: " + e;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "এখনই Sync করো";
+  }
+});
+
+loadStats();
+loadQuestions();
+loadThumbsDown();
+</script>
+</body>
+</html>

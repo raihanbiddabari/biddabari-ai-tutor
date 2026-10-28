@@ -1,0 +1,17 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.8
+
+trafilatura>=1.12
+requests>=2.32
+
+numpy>=1.26
+scikit-learn>=1.5
+
+# Local multilingual embeddings (works offline, good default for Bangla)
+sentence-transformers>=3.0
+
+# LLM client (Claude)
+anthropic>=0.40
+
+python-dotenv>=1.0
